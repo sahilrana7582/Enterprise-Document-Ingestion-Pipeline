@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]          # tool pip uses to build/install your project
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-ingestion"          # install name (not the import name)
+version = "0.1.0"
+requires-python = ">=3.10"             # refuses to install on 3.9: we use modern syntax
+dependencies = []                      # runtime deps: none yet, stdlib only
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]                    # extras you only need while developing
+
+[tool.setuptools.packages.find]
+where = ["src"]                        # "look for packages inside src/"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]                  # `pytest` with no args searches only tests/
+addopts = ["--import-mode=importlib"]  # avoids test-folder/package name clashes
