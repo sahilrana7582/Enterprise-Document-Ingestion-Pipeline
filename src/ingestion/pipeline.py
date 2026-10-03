@@ -23,7 +23,7 @@ class IngestionPipeline:
         duplicate_records: list[DuplicateRecord] = []
         skip_records: list[str] = []
         document_result: list[Document] = []
-        seen_checksums: set[str] = set()
+        seen_checksums: dict[str, str] = {}  # checksum -> source of the first file with that text
 
         discovered = 0
 
@@ -60,13 +60,13 @@ class IngestionPipeline:
                     duplicate_records.append(
                         DuplicateRecord(
                             source=document.source,
-                            duplicate_of=document.source
+                            duplicate_of=seen_checksums[document.checksum]
                         )
                     )
                     continue
 
                 document_result.append(document)
-                seen_checksums.add(document.checksum)
+                seen_checksums[document.checksum] = document.source
 
 
             except DocumentLoadError as err:
