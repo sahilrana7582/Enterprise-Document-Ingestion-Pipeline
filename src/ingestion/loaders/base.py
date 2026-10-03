@@ -4,9 +4,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
 
-<<<<<<< Updated upstream
-from src.ingestion.models import Document
-=======
 from pydantic import Field, PositiveInt
 
 from src.ingestion.models import Document, FrozenModel
@@ -19,7 +16,6 @@ class LoaderConfig(FrozenModel):
         default=50 * 1024 * 1024,
         description="Files larger than this are refused before they are read.",
     )
->>>>>>> Stashed changes
 
 
 class BaseLoader(ABC):
@@ -34,23 +30,17 @@ class BaseLoader(ABC):
 
     ``load`` must raise a ``DocumentLoadError`` (or a subclass) for any problem
     caused by the file, so the pipeline can isolate per-file failures.
-<<<<<<< Updated upstream
-=======
 
     Configuration arrives as a ``LoaderConfig`` (see ``self.config``), so a bad
     value fails at construction, not halfway through an ingestion run.
->>>>>>> Stashed changes
     """
 
     source_type: ClassVar[str]
     supported_extensions: ClassVar[tuple[str, ...]]
 
-<<<<<<< Updated upstream
-=======
     def __init__(self, config: LoaderConfig | None = None) -> None:
         self.config = LoaderConfig() if config is None else config
 
->>>>>>> Stashed changes
     @abstractmethod
     def load(self, path: str | Path) -> Document:
         """Read ``path`` and return it as a ``Document``."""
