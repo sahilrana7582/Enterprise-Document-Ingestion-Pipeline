@@ -1,7 +1,11 @@
 """Smoke script: load one or more .txt files and show what the loader produced.
 
-    python scripts/ingest.py data/txt/*.txt
-    python scripts/ingest.py data/txt/handbook.txt --preview 400
+    python -m scripts.ingest data/txt/*.txt
+    python -m scripts.ingest data/txt/handbook.txt --preview 400
+
+Run it from the project root, as a module (``-m``). The project imports itself
+as ``src.ingestion``, so the root must be on ``sys.path``; ``python scripts/ingest.py``
+would put ``scripts/`` there instead and fail with ``No module named 'src'``.
 
 Exits with status 1 if any file failed to load. A failure on one file never
 stops the others; that is the per-file error isolation the pipeline will build on.
@@ -10,8 +14,8 @@ stops the others; that is the per-file error isolation the pipeline will build o
 import argparse
 import sys
 
-from ingestion.exceptions import DocumentLoadError
-from ingestion.loaders import TextLoader
+from src.ingestion.exceptions import DocumentLoadError
+from src.ingestion.loaders import TextLoader
 
 
 def main() -> int:
