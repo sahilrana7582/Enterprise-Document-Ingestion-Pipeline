@@ -3,25 +3,32 @@ from pathlib import Path
 from src.ingestion.discovery import discover_files
 from src.ingestion.exceptions import DocumentLoadError
 from src.ingestion.loaders.registry import LoaderRegistry, default_registry
-from src.ingestion.models import Document, FailureRecord, IngestionResult
+from src.ingestion.models import (
+    Document, FailureRecord, IngestionResult, DuplicateRecord
+)
 
 
 class IngestionPipeline:
 
-    def __init__(self, loader_registry: LoaderRegistry | None = None) -> None:
+    def __init__(self, loader_registry: LoaderRegistry | None = None, skip_duplicates: bool = True) -> None:
         if loader_registry is None:
             loader_registry = default_registry()
         self.load_registry = loader_registry
+        self.skip_duplicates = skip_duplicates
 
     def run(self, root: str | Path) -> IngestionResult:
         root_path = Path(root).expanduser()
 
         failure_records: list[FailureRecord] = []
+        duplicate_records: list[DuplicateRecord] = []
         skip_records: list[str] = []
         document_result: list[Document] = []
+        seen_checksums: set[str] = set()
 
         discovered = 0
 
+
+        # CallBack to captures the failure records
         def handle_failure_record(error: OSError) -> None:
             failure_records.append(
                 FailureRecord(
@@ -48,7 +55,19 @@ class IngestionPipeline:
 
             try:
                 document = loader.load(file_path)
+
+                if document.checksum in seen_checksums and self.skip_duplicates:
+                    duplicate_records.append(
+                        DuplicateRecord(
+                            source=document.source,
+                            duplicate_of=document.source
+                        )
+                    )
+                    continue
+
                 document_result.append(document)
+                seen_checksums.add(document.checksum)
+
 
             except DocumentLoadError as err:
                 failure_records.append(
@@ -64,4 +83,5 @@ class IngestionPipeline:
             failures=failure_records,
             skipped=skip_records,
             documents=document_result,
+            duplicates=duplicate_records
         )

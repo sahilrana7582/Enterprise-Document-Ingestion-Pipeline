@@ -93,6 +93,10 @@ class BaseLoader(ABC):
                 "file contains no text",
             )
 
+        checksum = hashlib.sha256(
+                    extracted.content.encode("utf-8")
+                ).hexdigest()
+        
         metadata = _build_metadata(
             resolved,
             file_stat,
@@ -103,6 +107,7 @@ class BaseLoader(ABC):
 
         return Document(
             id=_document_id(source),
+            checksum=checksum,
             source=source,
             source_type=self.source_type,
             content=extracted.content,
