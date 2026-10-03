@@ -1,0 +1,5 @@
+Runbook: API latency alert
+
+1. Check the dashboard for p99 latency over the last 30 minutes.
+2. If a deploy happened in that window, roll it back first and investigate second.
+3. Page the on-call database engineer if connection pool usage exceeds 90%.
