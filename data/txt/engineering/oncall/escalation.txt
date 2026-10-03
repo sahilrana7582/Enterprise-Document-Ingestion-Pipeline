@@ -1,0 +1,3 @@
+Escalation policy
+
+Sev1: page immediately. Sev2: respond within 30 minutes. Sev3: next business day.
