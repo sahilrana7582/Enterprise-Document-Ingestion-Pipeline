@@ -5,6 +5,19 @@ You code, I guide. Every step has the same shape:
 
 No tests, as agreed. Instead, each step has a **Verify** section (REPL snippets and commands with the expected result) and uses your `data/` folder as the fixture. If you get stuck, paste your code and the exact output. I'll hint first and only take over if you ask.
 
+## Import convention (this project's rule)
+
+The project imports itself as **`src.ingestion.…`**, everywhere, with no exceptions:
+
+```python
+from src.ingestion.exceptions import DiscoveryError
+from src.ingestion.loaders.base import BaseLoader      # inside the loaders package: import the module, not the package
+```
+
+- **Never mix `ingestion.…` and `src.ingestion.…`.** They load as two separate copies of every module, so the same exception class exists twice and `except` stops catching what you raise.
+- **Run everything from the project root.** `src` is only importable when the root is on `sys.path`. Scripts therefore run as modules: `python -m scripts.ingest …`. (`python scripts/ingest.py` puts `scripts/` on the path instead and fails with `No module named 'src'`.)
+- The editable install from Step 1 still exposes a top-level `ingestion` package. Don't use that name anywhere. A quick audit: `grep -rnE "^\s*(from|import)\s+ingestion" src scripts` must print nothing.
+
 ---
 
 ## Step 0: Save what you have (2 min)
@@ -60,7 +73,7 @@ scripts/ingest.py        upgraded CLI (Step 10)
 | `txt/windows_crlf.txt` | loaded, then **duplicate** | different bytes, same text |
 | `txt/with_bom.txt` | loaded | BOM |
 
-**Final acceptance numbers** for `python scripts/ingest.py data/`:
+**Final acceptance numbers** for `python -m scripts.ingest data/`:
 discovered **10** · skipped **1** · failed **2** · loaded **7** · duplicates **2** · unique documents **5**.
 
 You'll aim at these numbers from Step 6 onward. (I computed them by running your current loader on the fixture.)
@@ -101,7 +114,7 @@ Also export both names from `loaders/__init__.py`. In `register()`, make the dup
 
 ### Verify (REPL)
 ```python
-from ingestion.loaders import default_registry, TextLoader
+from src.ingestion.loaders import default_registry, TextLoader
 r = default_registry()
 r.supported_extensions            # ('.txt',)
 r.loader_for("a/B.TXT")           # a TextLoader instance
@@ -135,8 +148,10 @@ r.register(TextLoader())          # ValueError naming '.txt'
 
 ### Design decisions
 - Discovery is **generic**: it yields *all* regular files. It does **not** know about loaders. Filtering by extension would hide "skipped" files from the report, so that's the pipeline's job.
-- Ignore by default: names starting with `.` (covers `.DS_Store`, `.git`), Office lock files starting with `~$` (they'll bite you with DOCX), `__MACOSX`, `Thumbs.db`. Make `ignore_hidden: bool = True` a parameter.
-- If `root` is a **file**, yield just that file. That's friendly for the CLI (`ingest.py one.txt`).
+- Two kinds of ignored names, kept in **one** helper (`_is_ignored`) so the rules can't drift apart between files and directories:
+  - *Hidden* (leading `.`), controlled by `ignore_hidden: bool = True`. Someone may genuinely want `.notes.txt`.
+  - *Debris*, **always** ignored even with `ignore_hidden=False`: `.DS_Store`, `.git`/`.hg`/`.svn`, Office lock files starting with `~$` (they'll bite you with DOCX), `__MACOSX`, `Thumbs.db`. Without this, turning off `ignore_hidden` would start ingesting the contents of `.git/`.
+- If `root` is a **file**, yield just that file, **even if its name is hidden**. You named it explicitly, and silently returning nothing would be baffling.
 - Root missing, or neither file nor directory → raise **`DiscoveryError(IngestionError)`**. It's a run-level failure, not a per-file one, so it must **not** be a `DocumentLoadError`. This is the "room at the top of the hierarchy" I mentioned in Step 2.
 - Subdirectory errors → call an optional `on_error(OSError)` callback and **keep going**. A callback keeps discovery decoupled from logging and results; the pipeline will pass one that records the problem.
 
@@ -150,7 +165,8 @@ def discover_files(
 ) -> Iterator[Path]: ...
 ```
 Hints:
-- Validate first: `Path(root).expanduser()`, check `exists()`, `is_file()`, `is_dir()`. Because this is a generator function, a raise inside it only fires on the first `next()`. That's fine for now. Think about *when* the caller sees it.
+- Validate first, and **eagerly**. A function containing `yield` is a generator, and its body (including your `raise`) doesn't run until the first `next()`, so `files = discover_files("typo")` would "succeed" and the error would surface far from the mistake. Make `discover_files` a *normal* function that validates immediately and returns an iterator produced by a private generator (`_walk`).
+- Do the validation with a single `stat()` (`S_ISREG` / `S_ISDIR` from the `stat` module) rather than `exists()` + `is_file()` + `is_dir()`, and catch `OSError` and `RuntimeError` as well as "not found". An unreadable parent directory raises `PermissionError`, and `~nosuchuser` raises `RuntimeError`. Both must come out as `DiscoveryError`.
 - Inside the walk: prune `dirs`, sort `dirs`, loop over `sorted(files)`, skip ignored names, and only yield real files. A broken symlink named `x.txt` is in `files` but `is_file()` is `False`.
 - Yield `Path` objects (join `dirpath` and name), not strings.
 
@@ -165,7 +181,7 @@ chmod 000 "$D/locked"
 echo $D
 ```
 ```python
-from ingestion.discovery import discover_files
+from src.ingestion.discovery import discover_files
 errs = []
 [str(p) for p in discover_files("<paste $D>", on_error=errs.append)]
 # expect, in this order: top.txt, a/one.txt, a/deep/two.txt, b/Z.TXT
@@ -232,7 +248,7 @@ class IngestionPipeline:
 
 ### Verify
 ```python
-from ingestion.pipeline import IngestionPipeline
+from src.ingestion.pipeline import IngestionPipeline
 r = IngestionPipeline().run("data")
 (r.discovered, len(r.skipped), len(r.failures), len(r.documents))   # (10, 1, 2, 7)
 [(f.error_type, f.source.split('/')[-1]) for f in r.failures]
@@ -277,11 +293,11 @@ This is the **Template Method** pattern: the base class owns the algorithm skele
 ### Safety net first (we have no tests, so use a golden-output diff)
 `scripts/ingest.py` prints metadata as a dict, so key order could cause false diffs. First change that one line to print `dict(sorted(doc.metadata.items()))`. Then capture the baseline **before touching anything**:
 ```bash
-python scripts/ingest.py data/txt/*.txt > /tmp/before.txt
+python -m scripts.ingest data/txt/*.txt > /tmp/before.txt
 ```
 After the refactor:
 ```bash
-python scripts/ingest.py data/txt/*.txt > /tmp/after.txt
+python -m scripts.ingest data/txt/*.txt > /tmp/after.txt
 diff /tmp/before.txt /tmp/after.txt && echo IDENTICAL
 ```
 A pure refactor must produce **IDENTICAL**. Any diff is a behavior change that you introduced by accident.
@@ -458,10 +474,10 @@ r.metrics
 
 ### Design
 ```
-python scripts/ingest.py data/                          # summary only
-python scripts/ingest.py data/ -v                       # per-file DEBUG logging
-python scripts/ingest.py data/ --report report.json     # machine-readable output
-python scripts/ingest.py data/ --keep-duplicates
+python -m scripts.ingest data/                          # summary only
+python -m scripts.ingest data/ -v                       # per-file DEBUG logging
+python -m scripts.ingest data/ --report report.json     # machine-readable output
+python -m scripts.ingest data/ --keep-duplicates
 ```
 - `argparse`: positional `root` (file or directory), `-v/--verbose`, `--report PATH`, `--keep-duplicates`.
 - This is the **only** place that calls `logging.basicConfig` (INFO by default, DEBUG with `-v`) and the only place that prints.
@@ -486,12 +502,12 @@ Build it with a `result.to_report() -> dict`:
 
 ### Verify
 ```bash
-python scripts/ingest.py data/ ; echo "exit=$?"                       # summary, exit=1 (two failures)
-python scripts/ingest.py data/txt/engineering ; echo "exit=$?"        # exit=0
-python scripts/ingest.py no/such/dir ; echo "exit=$?"                 # one clean error line, exit=2, no traceback
-python scripts/ingest.py data/ --report /tmp/report.json
+python -m scripts.ingest data/ ; echo "exit=$?"                       # summary, exit=1 (two failures)
+python -m scripts.ingest data/txt/engineering ; echo "exit=$?"        # exit=0
+python -m scripts.ingest no/such/dir ; echo "exit=$?"                 # one clean error line, exit=2, no traceback
+python -m scripts.ingest data/ --report /tmp/report.json
 python -m json.tool /tmp/report.json | head -40                       # valid JSON, no "content" key anywhere
-python scripts/ingest.py data/ -v 2>&1 | grep -c DEBUG                # > 0
+python -m scripts.ingest data/ -v 2>&1 | grep -c DEBUG                # > 0
 ```
 
 ### Pitfalls
@@ -506,9 +522,9 @@ python scripts/ingest.py data/ -v 2>&1 | grep -c DEBUG                # > 0
 ## Step 11: Acceptance run, and your recipe for the next formats (about 30 min)
 
 ### Acceptance checklist
-- [ ] `python scripts/ingest.py data/` → **discovered 10 · skipped 1 · failed 2 · loaded 7 · duplicates 2 · unique 5**, exit code 1
+- [ ] `python -m scripts.ingest data/` → **discovered 10 · skipped 1 · failed 2 · loaded 7 · duplicates 2 · unique 5**, exit code 1
 - [ ] Running it twice gives identical reports (apart from `generated_at` and `duration_seconds`)
-- [ ] Running from a different directory with a *relative* path (`cd .. && python "<project>/scripts/ingest.py" "<project>/data"`) gives the **same ids**. (Why? The loader resolves to an absolute path.)
+- [ ] An absolute path and a relative path give the **same ids**: `python -m scripts.ingest "$PWD/data"` vs `python -m scripts.ingest data`. (Why? The loader resolves to an absolute path.)
 - [ ] The injected-`ValueError` check from Step 6 still crashes the run
 - [ ] `git status` is clean and every step has its own commit
 

@@ -75,3 +75,11 @@ class EmptyDocumentError(DocumentLoadError):
 
 class DuplicateLoaderError(LoaderRegistryError):
     """Raised when registering a loader for an extension another loader already owns."""
+
+
+class DiscoveryError(IngestionError):
+    """The place to ingest from (the root path) is missing, unreadable, or not a file or directory.
+
+    A run-level failure, deliberately NOT a ``DocumentLoadError``: there is no
+    single bad file to skip, so the run cannot start.
+    """
