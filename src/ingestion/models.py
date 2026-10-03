@@ -48,6 +48,7 @@ class Document(FrozenModel):
         description="Stable identifier. Deterministic for a given source, so re-ingesting "
         "the same file yields the same id."
     )
+    checksum: NonBlankStr = Field(description="To identify the duplicate files")
     source: NonBlankStr = Field(
         description="Where the document came from, as a URI-like string (a resolved file "
         "path today, possibly s3://... or https://... later)."
@@ -78,9 +79,12 @@ class FailureRecord(FrozenModel):
     source: NonBlankStr
     error_type: NonBlankStr
     message: str
-
+class DuplicateRecord(FrozenModel):
+    source: NonBlankStr
+    duplicate_of: NonBlankStr
 class IngestionResult(FrozenModel):
     discovered: int = Field(ge=0)
     documents: list[Document] = Field(default_factory=list)
     failures: list[FailureRecord] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list) 
+    duplicates: list[DuplicateRecord] = Field(default_factory=list)
