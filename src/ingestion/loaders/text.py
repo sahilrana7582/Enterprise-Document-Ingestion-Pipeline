@@ -17,8 +17,11 @@ from src.ingestion.exceptions import (
 from src.ingestion.loaders.base import BaseLoader
 from src.ingestion.models import Document
 
+<<<<<<< Updated upstream
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
 
+=======
+>>>>>>> Stashed changes
 # (codec to try, label recorded in metadata), in order of preference.
 # utf-8-sig decodes UTF-8 *and* strips the BOM that Windows Notepad adds.
 # cp1252 is the fallback for legacy Windows files. Not latin-1: latin-1 can
@@ -37,11 +40,14 @@ class TextLoader(BaseLoader):
     source_type: ClassVar[str] = "txt"
     supported_extensions: ClassVar[tuple[str, ...]] = (".txt",)
 
+<<<<<<< Updated upstream
     def __init__(self, max_bytes: int = DEFAULT_MAX_BYTES) -> None:
         if max_bytes <= 0:
             raise ValueError(f"max_bytes must be positive, got {max_bytes}")
         self.max_bytes = max_bytes
 
+=======
+>>>>>>> Stashed changes
     def load(self, path: str | Path) -> Document:
         requested = Path(path)
         if not self.supports(requested):
@@ -54,9 +60,16 @@ class TextLoader(BaseLoader):
         resolved = _resolve(requested)
         source = str(resolved)
         file_stat = _stat_regular_file(resolved, source)
+<<<<<<< Updated upstream
         if file_stat.st_size > self.max_bytes:
             raise FileTooLargeError(
                 source, f"{file_stat.st_size} bytes exceeds the limit of {self.max_bytes}"
+=======
+        max_bytes = self.config.max_bytes
+        if file_stat.st_size > max_bytes:
+            raise FileTooLargeError(
+                source, f"{file_stat.st_size} bytes exceeds the limit of {max_bytes}"
+>>>>>>> Stashed changes
             )
 
         raw = _read_bytes(resolved, source)

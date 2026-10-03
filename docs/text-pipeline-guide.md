@@ -18,6 +18,43 @@ from src.ingestion.loaders.base import BaseLoader      # inside the loaders pack
 - **Run everything from the project root.** `src` is only importable when the root is on `sys.path`. Scripts therefore run as modules: `python -m scripts.ingest …`. (`python scripts/ingest.py` puts `scripts/` on the path instead and fails with `No module named 'src'`.)
 - The editable install from Step 1 still exposes a top-level `ingestion` package. Don't use that name anywhere. A quick audit: `grep -rnE "^\s*(from|import)\s+ingestion" src scripts` must print nothing.
 
+<<<<<<< Updated upstream
+=======
+## Pydantic conventions (this project's rule)
+
+Every data model (the document, configuration, results, reports) is a Pydantic model that extends **`FrozenModel`** from `src/ingestion/models.py`: frozen, strict, no unknown fields. Pydantic sits at the **boundaries** (what a loader returns, configuration, the report). Internal hops stay plain Python: a `NamedTuple` passed between two helpers doesn't need validating twice.
+
+| Rule | Why |
+|---|---|
+| Extend `FrozenModel`, never `BaseModel` directly | The policy lives in one place. A model that forgot `strict` would start coercing silently. |
+| `NonBlankStr` for ids, paths and names | Rejects `""` and `"   "` without altering the value. |
+| Metadata is `dict[str, JsonValue]` | A `Path` or `datetime` fails at construction, not later when the vector store rejects the payload. |
+| Change a document with `doc.replace(...)`, never `model_copy(update=...)` | `model_copy` **skips validation**. I measured it creating a `Document` with an empty id. |
+| Exceptions stay plain Python exceptions | A model can't be raised, and results store `type(err).__name__` as strings. |
+| The error you'll see is `ValidationError` | It subclasses `ValueError`. Assigning to a frozen model raises it too (not `FrozenInstanceError`). |
+| Build results at the end, from plain lists | In `run()` accumulate local lists, then construct the frozen result once. |
+
+## Dependencies
+
+- **`pyproject.toml`** lists what the code imports, as version *ranges*: `pydantic`, `langchain-core`.
+- **`requirements.txt`** pins the full resolved set (exact versions, 33 packages). Install:
+  ```bash
+  pip install -r requirements.txt && pip install -e ".[dev]"
+  ```
+- **The LangChain boundary.** Only `src/ingestion/adapters/langchain.py` imports `langchain_core`. Importing `models`, `loaders` or `discovery` never loads it (I checked). When a LangChain component needs our documents, call `to_langchain(doc)`. In the chunking project you'll feed those to `RecursiveCharacterTextSplitter.split_documents`; I checked that each chunk inherits our metadata.
+- `langchain-core` brings in `langsmith`. Tracing only sends data if you set tracing environment variables. Keep them unset for confidential documents.
+- When you add something, edit `pyproject.toml` and refresh `requirements.txt` (the command is in its header). Planned additions:
+
+| When | Add | Why |
+|---|---|---|
+| Step 10 (CLI) | `pydantic-settings` | Environment-driven configuration (`INGESTION_MAX_BYTES=...`) as a `BaseSettings` model |
+| PDF loader | `pypdf` (or `pymupdf`) | The parser. You'll compare them. |
+| DOCX loader | `python-docx` | |
+| HTML loader | `beautifulsoup4` (+ `lxml`) | |
+| Chunking project | `langchain-text-splitters` | |
+| Only if you want their loaders | `langchain-community` | Pulls in a very large dependency tree. Your own `_extract` plus the parser is usually leaner. |
+
+>>>>>>> Stashed changes
 ---
 
 ## Step 0: Save what you have (2 min)
@@ -47,6 +84,7 @@ Files at the end of this phase:
 
 ```
 src/ingestion/
+<<<<<<< Updated upstream
 ├── exceptions.py        + DiscoveryError
 ├── models.py            + checksum field, FailureRecord, DuplicateRecord, IngestionResult
 ├── discovery.py         NEW (Step 5)
@@ -55,6 +93,18 @@ src/ingestion/
     ├── base.py          refactored into a template method (Step 7)
     ├── text.py          slimmed down to the text-specific part
     └── registry.py      NEW (Step 4)
+=======
+├── exceptions.py        + DiscoveryError                                        (done)
+├── models.py            FrozenModel, NonBlankStr, Document                      (done, Pydantic)
+│                        + checksum field, FailureRecord, DuplicateRecord, IngestionResult, IngestionMetrics
+├── adapters/langchain.py   to_langchain(), the only LangChain import            (done)
+├── discovery.py         NEW (Step 5)                                            (done)
+├── pipeline.py          NEW (Step 6)
+└── loaders/
+    ├── base.py          LoaderConfig + __init__(config) (done); template method (Step 7)
+    ├── text.py          slimmed down to the text-specific part
+    └── registry.py      NEW (Step 4)                                            (done)
+>>>>>>> Stashed changes
 scripts/ingest.py        upgraded CLI (Step 10)
 ```
 
@@ -87,7 +137,11 @@ You'll aim at these numbers from Step 6 onward. (I computed them by running your
 
 ### Concepts
 - **Registry pattern.** A lookup table (`extension → loader`) filled at startup. Adding PDF later becomes "register one more loader". No other file changes. That property is the entire point of this phase.
+<<<<<<< Updated upstream
 - **You register instances, not classes.** A `TextLoader(max_bytes=10_000_000)` carries configuration. A class can't.
+=======
+- **You register instances, not classes.** A `TextLoader(config=LoaderConfig(max_bytes=10_000_000))` carries configuration. A class can't.
+>>>>>>> Stashed changes
 
 ### Design decisions
 | Decision | Recommendation | Why |
@@ -216,6 +270,7 @@ Run `list(discover_files("data"))` twice and confirm the same order each time.
 
 ### Design decisions
 ```python
+<<<<<<< Updated upstream
 @dataclass(frozen=True, kw_only=True)
 class FailureRecord:
     source: str
@@ -231,6 +286,21 @@ class IngestionResult:
 ```
 - **Why `error_type: str` and not the exception object?** The report must be JSON-serializable. Exception objects also hold tracebacks, which keeps frames alive in memory for the whole run. Convert the exception to plain strings at the boundary.
 - **Why `IngestionResult` is mutable here:** the pipeline builds it up as it goes. That's fine, and `Document` itself stays frozen.
+=======
+class FailureRecord(FrozenModel):
+    source: NonBlankStr
+    error_type: NonBlankStr      # type(err).__name__
+    message: str
+
+class IngestionResult(FrozenModel):
+    discovered: int = Field(ge=0)
+    documents: list[Document] = Field(default_factory=list)
+    failures: list[FailureRecord] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+```
+- **Why `error_type: str` and not the exception object?** The report must be JSON-serializable, and Pydantic rejects an exception object in a `str` field (I checked). Exception objects also hold tracebacks, which keeps frames alive in memory for the whole run. Convert the exception to plain strings at the boundary.
+- **Frozen result, built once.** Inside `run()` accumulate in plain local lists (`documents`, `failures`, `skipped`), then `return IngestionResult(...)` at the end. Pydantic copies the lists you pass in, so appending to your local list afterwards can't change a result you already returned (I checked). `Field(ge=0)` makes a negative count impossible.
+>>>>>>> Stashed changes
 - **Memory.** `documents` holds everything in memory. Fine for thousands of files. A streaming/generator version is a Project-9 topic. Make a one-line note in the docstring so future-you remembers it's a known limit.
 
 ```python
@@ -245,6 +315,10 @@ class IngestionPipeline:
    - `None` → `skipped.append(str(path))`; `continue`.
 3. `try: doc = loader.load(path)` / `except DocumentLoadError as err:` → append a `FailureRecord`; `continue`.
 4. Append `doc` to `documents`. Count every discovered file in `discovered`.
+<<<<<<< Updated upstream
+=======
+5. After the loop, `return IngestionResult(discovered=..., documents=..., failures=..., skipped=...)`.
+>>>>>>> Stashed changes
 
 ### Verify
 ```python
@@ -304,21 +378,35 @@ A pure refactor must produce **IDENTICAL**. Any diff is a behavior change that y
 
 ### Design
 ```python
+<<<<<<< Updated upstream
 class Extracted(NamedTuple):
     content: str
     metadata: dict[str, Any]            # format-specific: {"encoding": "utf-8"} for text, {"page_count": 12} for PDF
+=======
+class Extracted(NamedTuple):         # a plain NamedTuple on purpose: it never leaves the loader, and
+    content: str                     # Document validates content and metadata once, at the end
+    metadata: dict[str, Any]         # format-specific: {"encoding": "utf-8"} for text, {"page_count": 12} for PDF
+>>>>>>> Stashed changes
 
 class BaseLoader(ABC):
     source_type: ClassVar[str]
     supported_extensions: ClassVar[tuple[str, ...]]
 
+<<<<<<< Updated upstream
     def __init__(self, max_bytes: int = DEFAULT_MAX_BYTES) -> None: ...      # moves up from TextLoader
+=======
+    def __init__(self, config: LoaderConfig | None = None) -> None: ...      # ALREADY DONE (Pydantic refactor)
+>>>>>>> Stashed changes
     def load(self, path: str | Path) -> Document: ...                        # CONCRETE: the shared algorithm
     @abstractmethod
     def _extract(self, raw: bytes, path: Path) -> Extracted: ...             # the one hook
     def supports(self, path: str | Path) -> bool: ...                        # unchanged
 ```
+<<<<<<< Updated upstream
 - **What moves to `base.py`:** `DEFAULT_MAX_BYTES`, `_resolve`, `_describe_os_error`, `_stat_regular_file`, `_read_bytes`, `_document_id`, the constructor, and the metadata building. Shared metadata keys: `filename`, `extension`, `size_bytes`, `modified_at`, `char_count`. Merge the format-specific `Extracted.metadata` on top.
+=======
+- **What moves to `base.py`:** `_resolve`, `_describe_os_error`, `_stat_regular_file`, `_read_bytes`, `_document_id`, and the metadata building. (The constructor and the size limit already live there as `LoaderConfig`; the shared size check reads `self.config.max_bytes`.) Shared metadata keys: `filename`, `extension`, `size_bytes`, `modified_at`, `char_count`. Merge the format-specific `Extracted.metadata` on top.
+>>>>>>> Stashed changes
 - **What stays in `text.py`:** the encodings list, `_decode`, `_normalize_newlines`, and a `_extract` that does: NUL check → decode → normalize → `Extracted(content, {"encoding": label})`.
 - **Convention:** subclasses implement `_extract` and **don't override `load`**. Python won't enforce that, so write it in the class docstring.
 - **Where does the empty check live?** In the shared part, *after* `_extract`. This will quietly give you the right behavior for scanned PDFs later: no extractable text → `EmptyDocumentError`.
@@ -332,7 +420,11 @@ class BaseLoader(ABC):
 ### Pitfalls
 - Leaving a `load` in `TextLoader` that shadows the base one. Delete it, don't keep both.
 - Computing `char_count` on the text *before* newline normalization. `windows_crlf.txt` would report 373 instead of 363, and the golden diff will catch it. Order is behavior: the NUL check runs on raw bytes, then decode, then normalize, and only then the empty check and `char_count`.
+<<<<<<< Updated upstream
 - Keeping `max_bytes` validation only in `TextLoader.__init__`. Call `super().__init__(max_bytes)`.
+=======
+- Reading the size limit from anywhere except `self.config.max_bytes`, or giving a subclass its own `__init__` that forgets to call `super().__init__(config)`. Then `self.config` doesn't exist and the failure is an `AttributeError` far from the cause.
+>>>>>>> Stashed changes
 
 ### Check yourself
 1. Which lines of the old `TextLoader.load` were *really* about text?
@@ -363,7 +455,11 @@ You're laying the foundation now. You don't build incremental ingestion yet.
 
 ### Design decisions
 - **Hash the normalized *content*, not the raw bytes.** Your fixture proves why: `handbook.txt` and `windows_crlf.txt` are different files (different bytes) with the same text. A byte hash calls them different, and you'd embed the same text twice. A content hash correctly calls them duplicates. Use `sha256(content.encode("utf-8")).hexdigest()` on the final, normalized text. (A raw-bytes `file_sha256` is useful for integrity checks, but it isn't what dedup needs. Skip it for now.)
+<<<<<<< Updated upstream
 - **`checksum` becomes a first-class `Document` field**, not a metadata entry. It's part of the document's identity story. Add it to `__post_init__`'s non-empty string checks. Compute it **once, in `BaseLoader.load`**, so no format can forget it. That's the payoff of Step 7.
+=======
+- **`checksum` becomes a first-class `Document` field**, not a metadata entry. It's part of the document's identity story. Declare it on `Document` as `checksum: NonBlankStr = Field(description=...)`, so an empty checksum is impossible. Compute it **once, in `BaseLoader.load`**, so no format can forget it. That's the payoff of Step 7.
+>>>>>>> Stashed changes
 - **Duplicate policy:**
   - The **first** file seen wins. Sorted discovery (Step 5) makes "first" deterministic.
   - Later copies are recorded in `result.duplicates` and, by default, **left out of `documents`**.
@@ -372,10 +468,16 @@ You're laying the foundation now. You don't build incremental ingestion yet.
 - **Exact duplicates only.** Near-duplicates (a doc with one paragraph changed) need MinHash or embeddings. That's later.
 
 ```python
+<<<<<<< Updated upstream
 @dataclass(frozen=True, kw_only=True)
 class DuplicateRecord:
     source: str
     duplicate_of: str
+=======
+class DuplicateRecord(FrozenModel):
+    source: NonBlankStr
+    duplicate_of: NonBlankStr
+>>>>>>> Stashed changes
 ```
 Add `duplicates: list[DuplicateRecord]` to `IngestionResult`. In `run()`, keep a `seen: dict[str, str]` (checksum → first source).
 
@@ -422,8 +524,12 @@ Then run with `skip_duplicates=False` → `len(documents) == 7`, and duplicates 
 ### Concepts: metrics
 Derive them from the result at the end of the run instead of maintaining counters in the loop. There's less mutable state to get wrong. Add:
 ```python
+<<<<<<< Updated upstream
 @dataclass(frozen=True, kw_only=True)
 class IngestionMetrics:
+=======
+class IngestionMetrics(FrozenModel):         # put Field(ge=0) on the counts, ge=0 on duration_seconds too
+>>>>>>> Stashed changes
     discovered: int
     loaded: int            # all successfully loaded, including duplicates
     unique: int            # len(documents)
@@ -439,7 +545,11 @@ class IngestionMetrics:
 - Time with `time.perf_counter()`, which is monotonic. Don't use `time.time()` for durations because it can jump when the clock is adjusted.
 - `collections.Counter` gives you the two `*_by_type` dicts almost for free.
 - Why this matters beyond demos: "failure rate went from 0.5% to 8%" is how you notice that a new document template broke your parser.
+<<<<<<< Updated upstream
 - To compute `total_chars` / `total_bytes` for *loaded-including-duplicates* you need the sizes of duplicates too. Decide whether the metric is over unique docs or all loaded, and **document your choice** in the dataclass. (Simplest honest choice: unique documents only, and say so.)
+=======
+- To compute `total_chars` / `total_bytes` for *loaded-including-duplicates* you need the sizes of duplicates too. Decide whether the metric is over unique docs or all loaded, and **document your choice** in the field's `description`. (Simplest honest choice: unique documents only, and say so.)
+>>>>>>> Stashed changes
 
 ### Implement
 - Module logger in `pipeline.py` (and in `discovery.py` if you want to log pruned/ignored dirs at DEBUG).
@@ -492,13 +602,23 @@ python -m scripts.ingest data/ --keep-duplicates
 - Catch `DiscoveryError` in the CLI → print one clean line to **stderr**, exit 2. No traceback for expected errors.
 
 ### The report
+<<<<<<< Updated upstream
 Build it with a `result.to_report() -> dict`:
+=======
+Build it from the result with `result.model_dump(mode="json", ...)`:
+>>>>>>> Stashed changes
 - `metrics` (all fields)
 - `failures` (list of `{source, error_type, message}`)
 - `skipped`, `duplicates`
 - `documents`: for each, `id`, `source`, `source_type`, `checksum`, `metadata` — **not `content`**. A report is for auditing; megabytes of text don't belong in it.
 
+<<<<<<< Updated upstream
 `dataclasses.asdict` converts nested dataclasses for you. Write with `json.dump(..., indent=2, sort_keys=True)`, and add a `generated_at` UTC ISO timestamp (this is the one field expected to differ between runs).
+=======
+`mode="json"` converts everything to JSON-safe values, nested models included. To leave out each document's text use the exclude spec `exclude={"documents": {"__all__": {"content"}}}` (I tested that it works, and the report keeps only `id`, `source`, `source_type`, `checksum`, `metadata`). Write with `json.dump(..., indent=2, sort_keys=True)` and add a `generated_at` UTC ISO timestamp (the one field expected to differ between runs).
+
+Configuration also belongs here. This is the step that adds `pydantic-settings`: an `IngestionSettings(BaseSettings)` with `env_prefix="INGESTION_"` (fields such as `max_bytes`, `ignore_hidden`, `skip_duplicates`, `log_level`), so a deployment can configure the tool with environment variables and CLI flags only override them. Add it to `pyproject.toml` and refresh `requirements.txt`.
+>>>>>>> Stashed changes
 
 ### Verify
 ```bash
