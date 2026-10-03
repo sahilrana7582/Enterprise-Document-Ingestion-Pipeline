@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from ingestion.exceptions import DuplicateLoaderError, LoaderRegistryError
-from ingestion.loaders.base import BaseLoader
-from ingestion.loaders.text import TextLoader
+from src.ingestion.exceptions import DuplicateLoaderError, LoaderRegistryError
+from src.ingestion.loaders.base import BaseLoader
+from src.ingestion.loaders.text import TextLoader
 
 
 class LoaderRegistry:

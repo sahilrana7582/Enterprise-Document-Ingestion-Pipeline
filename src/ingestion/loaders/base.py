@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
 
-from ingestion.models import Document
+from src.ingestion.models import Document
 
 
 class BaseLoader(ABC):

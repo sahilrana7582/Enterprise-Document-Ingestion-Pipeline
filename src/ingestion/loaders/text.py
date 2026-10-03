@@ -7,15 +7,15 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import Any, ClassVar
 
-from ingestion.exceptions import (
+from src.ingestion.exceptions import (
     DocumentDecodeError,
     DocumentReadError,
     EmptyDocumentError,
     FileTooLargeError,
     UnsupportedFileTypeError,
 )
-from ingestion.loaders.base import BaseLoader
-from ingestion.models import Document
+from src.ingestion.loaders.base import BaseLoader
+from src.ingestion.models import Document
 
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
 
