@@ -11,6 +11,28 @@ is deliberately left to crash loudly.
 class IngestionError(Exception):
     """Root of every exception this project raises on purpose."""
 
+class LoaderError(IngestionError):
+    """A loader is set up or wired wrongly. A startup problem, not a bad file.
+
+    Deliberately NOT a ``DocumentLoadError``: the pipeline swallows those per
+    file, and a misconfigured loader must stop the run instead.
+    """
+
+
+class LoaderRegistryError(LoaderError):
+    """The loader registry was used wrongly.
+
+    Carries ``loader_name`` (which loader) and ``message`` (what went wrong).
+    """
+
+    def __init__(self, loader_name: str, message: str) -> None:
+        self.loader_name = loader_name
+        self.message = message
+        super().__init__(loader_name, message)
+
+    def __str__(self) -> str:
+        return f"{self.loader_name}: {self.message}"
+
 
 class DocumentLoadError(IngestionError):
     """A single document could not be loaded.
@@ -49,3 +71,7 @@ class FileTooLargeError(DocumentLoadError):
 
 class EmptyDocumentError(DocumentLoadError):
     """Raised when a file loads fine but contains no usable content."""
+
+
+class DuplicateLoaderError(LoaderRegistryError):
+    """Raised when registering a loader for an extension another loader already owns."""
