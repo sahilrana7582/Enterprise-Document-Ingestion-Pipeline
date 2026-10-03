@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "enterprise-ingestion"          # install name (not the import name)
 version = "0.1.0"
 requires-python = ">=3.10"             # refuses to install on 3.9: we use modern syntax
-dependencies = []                      # runtime deps: none yet, stdlib only
+dependencies = [                       # what the code imports; ranges, not pins (requirements.txt pins)
+    "pydantic>=2.13,<3",               # Document model, validated loader config
+    "langchain-core>=1.6,<2",          # LangChain Document, via src/ingestion/adapters/langchain.py
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]                    # extras you only need while developing
