@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import ClassVar
 
-from src.ingestion.exceptions import DocumentDecodeError, EmptyDocumentError
+from src.ingestion.exceptions import DocumentDecodeError
 from src.ingestion.loaders.base import BaseLoader, Extracted
 
 
@@ -25,17 +25,20 @@ class TextLoader(BaseLoader):
     supported_extensions: ClassVar[tuple[str, ...]] = (".txt",)
 
     def _extract(self, raw: bytes, path: Path) -> Extracted:
-        text, encoding = _decode(raw, str(path))
-        content = _normalize_newlines(text)
+        source = str(path)
 
-        if not content.strip():
-            raise EmptyDocumentError(
-                str(path),
-                "file contains no text",
+        # Plain text never contains NUL bytes. PDF and DOCX files legitimately do,
+        # which is why this check lives here and not in BaseLoader.
+        if b"\x00" in raw:
+            raise DocumentDecodeError(
+                source,
+                "contains NUL bytes; looks binary (UTF-16/32 text is not supported)",
             )
 
+        text, encoding = _decode(raw, source)
+
         return Extracted(
-            content=content,
+            content=_normalize_newlines(text),
             metadata={
                 "encoding": encoding,
             },

@@ -11,7 +11,6 @@ from typing import Any, ClassVar, NamedTuple
 from pydantic import Field, PositiveInt
 
 from src.ingestion.exceptions import (
-    DocumentDecodeError,
     DocumentReadError,
     EmptyDocumentError,
     FileTooLargeError,
@@ -35,7 +34,21 @@ class LoaderConfig(FrozenModel):
 
 
 class BaseLoader(ABC):
-    """Turns one file into one canonical ``Document``."""
+    """Turns one file into one canonical ``Document``.
+
+    ``load`` does everything every format needs: extension check, size limit,
+    reading the file, empty check, id and common metadata. A subclass does not
+    override ``load``. It only sets two class attributes and implements ``_extract``:
+
+    * ``source_type``: label stored on every Document it produces (``"txt"``).
+    * ``supported_extensions``: lowercase extensions with the dot (``(".txt",)``).
+    * ``_extract``: turn the file's raw bytes into text, plus any metadata that
+      only that format knows (``{"encoding": ...}`` for text, ``{"page_count": ...}``
+      for PDF).
+
+    Every problem caused by the file must be raised as a ``DocumentLoadError``
+    (or a subclass), so the pipeline can skip that file and keep going.
+    """
 
     source_type: ClassVar[str]
     supported_extensions: ClassVar[tuple[str, ...]]
@@ -69,13 +82,6 @@ class BaseLoader(ABC):
 
         raw = _read_bytes(resolved, source)
 
-        if b"\x00" in raw:
-            raise DocumentDecodeError(
-                source,
-                "contains NUL bytes; looks binary "
-                "(UTF-16/32 text is not supported)",
-            )
-
         # Template Method:
         # BaseLoader controls the workflow.
         # Concrete loaders implement _extract().
@@ -84,13 +90,12 @@ class BaseLoader(ABC):
         if not extracted.content.strip():
             raise EmptyDocumentError(
                 source,
-                "document contains no text",
+                "file contains no text",
             )
 
         metadata = _build_metadata(
             resolved,
             file_stat,
-            encoding="utf-8",
             content=extracted.content,
         )
 
@@ -175,7 +180,6 @@ def _document_id(source: str) -> str:
 def _build_metadata(
     path: Path,
     file_stat: os.stat_result,
-    encoding: str,
     content: str,
 ) -> dict[str, Any]:
     """Build JSON-serializable metadata common to every loader."""
@@ -184,7 +188,6 @@ def _build_metadata(
         "filename": path.name,
         "extension": path.suffix.lower(),
         "size_bytes": file_stat.st_size,
-        "encoding": encoding,
         "modified_at": datetime.fromtimestamp(
             file_stat.st_mtime,
             tz=timezone.utc,
